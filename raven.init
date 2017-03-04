@@ -1,0 +1,66 @@
+#!/bin/bash
+. /lib/lsb/init-functions
+
+DAEMON=/root/raven/raven.py
+ROLES=/root/raven/roles.py
+
+test -x $DAEMON || exit 0
+
+do_real_start(){
+	DAEMON_ARGS="$1"
+	PIDFILE="/var/run/raven-$1.pid"
+	start-stop-daemon --start --oknodo --background --quiet ${PIDFILE:+--pidfile ${PIDFILE} --make-pidfile} $START_ARGS --exec /usr/bin/python3 -- $DAEMON $DAEMON_ARGS > /dev/null || return 2
+}
+
+do_real_stop(){
+	PIDFILE="/var/run/raven-$1.pid"
+	start-stop-daemon --stop --quiet --oknodo --remove-pidfile --pidfile "$PIDFILE"
+}
+
+do_status(){
+	failed=0
+	for role in $($ROLES)
+	do
+		status_of_proc -p /var/run/raven-$role.pid $DAEMON raven-$role || failed=$?
+	done
+	exit $failed
+}
+
+do_start(){
+	for role in $($ROLES)
+	do
+		log_daemon_msg "Starting raven" "$role"
+		do_real_start "$role"
+		log_end_msg $?
+	done
+}
+
+do_stop(){
+	for role in $($ROLES)
+	do
+		log_daemon_msg "Stopping raven" "$role"
+		do_real_stop "$role"
+		log_end_msg $?
+	done
+}
+
+case "$1" in
+	start)
+		do_start "$2"
+		;;
+	stop)
+		do_stop "$2"
+		;;
+	restart)
+		do_stop "$2"
+		do_start "$2"
+		;;
+	status)
+		do_status "$2"
+		;;
+	*)
+		echo "Usage: $0 {start|stop|restart|status}" >&2
+		exit 2
+		;;
+esac
+exit 0
