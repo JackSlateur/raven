@@ -31,7 +31,7 @@ You must not update any entry nor delete entry you've not inserted.
 
 How to install
 ---
-On all nodes:
+On all nodes (stretch required, at least):
 ```
 aptitude install python3 python3-requests python3-sh python3-boto ffmpeg python3-pika
 ln -s /root/raven/raven.init /etc/init.d/raven && update-rc.d raven defaults
