@@ -123,9 +123,4 @@ def do_job(ch, method, props, body):
 		thumb(body, method.delivery_tag)
 
 def run():
-	while True:
-		try:
-			amqp.worker.consume_forever(do_job)
-		except Exception as e:
-			log.log('Error found: %s' % (e,))
-
+	amqp.worker.consume_forever(do_job)

@@ -5,6 +5,7 @@ import time
 import pika
 
 import config
+import log
 
 
 def connect():
@@ -99,8 +100,9 @@ class Adapter:
 				self.channel.basic_qos(prefetch_count=1)
 				self.channel.basic_consume(callback, queue=self.queue)
 				self.channel.start_consuming()
-			except (pika.exceptions.ConnectionClosed, AttributeError):
+			except (pika.exceptions.ConnectionClosed, AttributeError) as e:
 				self.channel = None
+			log.log('consume_forever: %s' % (e,))
 			time.sleep(1)
 
 	def notify(self, _id, status):
