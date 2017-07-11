@@ -29,6 +29,7 @@ def call_upstream(result, duration, _id, metadata=None, thumbnails=None):
 		del data['thumbnails']
 	except KeyError:
 		pass
+	db.delete(_id, masterid=True)
 	log.log('call_upstream (thumbnails removed): %s %s -> %s' % (_id, data, result))
 
 
@@ -110,7 +111,6 @@ def __merged(body):
 		return
 
 	call_upstream(True, body['duration'], job['video'], job['metadata'], job['thumbs'])
-	db.delete(job['id'], masterid=True)
 
 
 def __insert_chunk(body):
@@ -155,7 +155,6 @@ def scan_events():
 			else:
 				video = item['video']
 				call_upstream(False, None, video)
-				db.delete(item['master'], masterid=True)
 		elif status == 'IS_VALID':
 			item = db.get(body['id'])
 			if item is None:
