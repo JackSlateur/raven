@@ -1,5 +1,4 @@
 import json
-import multiprocessing
 import pymysql
 import requests
 import time
@@ -9,6 +8,7 @@ import config
 import amqp
 
 from sql import sql
+
 
 def call_upstream(result, duration, _id, metadata=None, thumbnails=None):
 	if result is False:
@@ -31,6 +31,7 @@ def call_upstream(result, duration, _id, metadata=None, thumbnails=None):
 		pass
 	log.log('call_upstream (thumbnails removed): %s %s -> %s' % (_id, data, result))
 
+
 def scan_new():
 	for job in db.get_new():
 		data = {'status': 'TO_PROBE',
@@ -40,6 +41,7 @@ def scan_new():
 		result = amqp.master.pub(data, priority=True)
 		if result is not False:
 			db.update(job['id'], 'SEEN')
+
 
 def __encoded(body, status):
 	db.update(body['id'], status)
@@ -63,6 +65,7 @@ def __encoded(body, status):
 			}
 		amqp.worker.pub(data)
 
+
 def __merged_ugly(body, status):
 	db.update(body['id'], status, masterid=True)
 
@@ -79,12 +82,14 @@ def __merged_ugly(body, status):
 		}
 	amqp.worker.pub(data)
 
+
 def __thumbed(body, status):
 	db.update(body['id'], status, masterid=True)
 	db.set_thumbs(body['id'], body['thumbnails'])
 
 	job = db.get_slaves(body['id'])
 	amqp.master.pub({'status': 'TO_MERGE', 'id': body['id'], 'job': job})
+
 
 def __probed(body, status):
 	db.update(body['id'], status, metadata=body['metadata'], masterid=True)
@@ -97,6 +102,7 @@ def __probed(body, status):
 	data = {'status': 'TO_SPLIT', 'id': body['id'], 'path': job['path'], 'metadata': body['metadata'], 'video': job['video']}
 	amqp.master.pub(data, priority=True)
 
+
 def __merged(body):
 	job = db.get(body['id'])
 	if job is None:
@@ -106,6 +112,7 @@ def __merged(body):
 	call_upstream(True, body['duration'], job['video'], job['metadata'], job['thumbs'])
 	db.delete(job['id'], masterid=True)
 
+
 def __insert_chunk(body):
 	item = db.get(body['id'])
 	if item is None:
@@ -114,6 +121,7 @@ def __insert_chunk(body):
 	path = json.dumps(body['path'])
 	inserted_id = db.insert(path, 'SPLITED', item['metadata'], body['id'], body['chunkid'], item['video'])
 	amqp.worker.pub({'status': 'TO_ENCODE', 'metadata': item['metadata'], 'path': path, 'id': inserted_id})
+
 
 def scan_events():
 	while True:
@@ -157,6 +165,7 @@ def scan_events():
 		else:
 			log.error('Bug found: unknown message received: %s' % (body,))
 		amqp.watcher.ack(method.delivery_tag)
+
 
 def run():
 	global db
