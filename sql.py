@@ -120,13 +120,9 @@ class sql:
 		query = 'update files set thumbs = %s where master = %s'
 		self.__exec(query, (thumbs, masterid))
 
-	def delete(self, _id, masterid=False):
-		query = 'delete from files where id = %s'
-		self.__exec(query, (_id,))
-
-		if masterid is True:
-			query = 'delete from files where master = %s'
-			self.__exec(query, (_id,))
+	def delete(self, video):
+		query = 'delete from files where video = %s'
+		self.__exec(query, (video,))
 
 	def dump(self):
 		query = 'select id, status from video'

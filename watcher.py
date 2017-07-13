@@ -29,7 +29,7 @@ def call_upstream(result, duration, _id, metadata=None, thumbnails=None):
 		del data['thumbnails']
 	except KeyError:
 		pass
-	db.delete(_id, masterid=True)
+	db.delete(_id)
 	log.log('call_upstream (thumbnails removed): %s %s -> %s' % (_id, data, result))
 
 
