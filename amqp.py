@@ -102,7 +102,7 @@ class Adapter:
 				self.channel.start_consuming()
 			except (pika.exceptions.ConnectionClosed, AttributeError) as e:
 				self.channel = None
-			log.log('consume_forever: %s' % (e,))
+				log.log('consume_forever: %s' % (e,))
 			time.sleep(1)
 
 	def notify(self, _id, status):
