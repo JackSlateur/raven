@@ -48,7 +48,6 @@ def __encoded(body, status):
 	db.update(body['id'], status)
 	item = db.get(body['id'])
 	if item is None:
-		log.log('Database entries vanished, id: %s' % (body['id'],))
 		return
 
 	master = item['master']
@@ -95,32 +94,23 @@ def __thumbed(body, status):
 def __probed(body, status):
 	db.update(body['id'], status, metadata=body['metadata'], masterid=True)
 	job = db.get(body['id'])
-	if job is None:
-		log.log('Database entries vanished, id: %s' % (body['id'],))
-		return
-
-
-	data = {'status': 'TO_SPLIT', 'id': body['id'], 'path': job['path'], 'metadata': body['metadata'], 'video': job['video']}
-	amqp.master.pub(data, priority=True)
+	if job is not None:
+		data = {'status': 'TO_SPLIT', 'id': body['id'], 'path': job['path'], 'metadata': body['metadata'], 'video': job['video']}
+		amqp.master.pub(data, priority=True)
 
 
 def __merged(body):
 	job = db.get(body['id'])
-	if job is None:
-		log.log('Database entries vanished, id: %s' % (body['id'],))
-		return
-
-	call_upstream(True, body['duration'], job['video'], job['metadata'], job['thumbs'])
+	if job is not None:
+		call_upstream(True, body['duration'], job['video'], job['metadata'], job['thumbs'])
 
 
 def __insert_chunk(body):
 	item = db.get(body['id'])
-	if item is None:
-		log.log('Database entries vanished, id: %s' % (body['id'],))
-		return
-	path = json.dumps(body['path'])
-	inserted_id = db.insert(path, 'SPLITED', item['metadata'], body['id'], body['chunkid'], item['video'])
-	amqp.worker.pub({'status': 'TO_ENCODE', 'metadata': item['metadata'], 'path': path, 'id': inserted_id})
+	if item is not None:
+		path = json.dumps(body['path'])
+		inserted_id = db.insert(path, 'SPLITED', item['metadata'], body['id'], body['chunkid'], item['video'])
+		amqp.worker.pub({'status': 'TO_ENCODE', 'metadata': item['metadata'], 'path': path, 'id': inserted_id})
 
 
 def scan_events():
@@ -150,9 +140,7 @@ def scan_events():
 			__insert_chunk(body)
 		elif status == 'FAILED':
 			item = db.get(body['id'])
-			if item is None:
-				log.log('Database entries vanished, id: %s' % (body['id'],))
-			else:
+			if item is not None:
 				video = item['video']
 				call_upstream(False, None, video)
 		elif status == 'IS_VALID':
