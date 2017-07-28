@@ -4,6 +4,7 @@ from sh import ffprobe as program
 import utils
 from log import log, warn
 
+
 def ffprobe(filename):
 	log('probing %s' % (filename))
 	probe = program.bake('-show_error', '-show_streams', '-print_format', 'json')
@@ -48,6 +49,7 @@ def ffprobe(filename):
 		result[i['index']] = stream
 
 	return result
+
 
 def get_duration(filename):
 	try:

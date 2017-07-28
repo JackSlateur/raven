@@ -9,6 +9,7 @@ from sh import ffmpeg as program
 
 program = program.bake("-loglevel", "warning")
 
+
 def split(filename, _id, metadata):
 	log.log('spliting %s' % (filename))
 
@@ -40,6 +41,7 @@ def split(filename, _id, metadata):
 
 	return []
 
+
 def merge(files):
 	log.log('merging files: %s' % (files,))
 
@@ -54,6 +56,7 @@ def merge(files):
 	except Exception as e:
 		log.log('merge error on %s: %s' % (files, e.stderr))
 		return None
+
 
 def thumb(files):
 	log.log('creating thumbs: %s' % (files,))
@@ -74,6 +77,7 @@ def thumb(files):
 			if re.match(match, name):
 				png.append(os.path.join(root, name))
 	return png
+
 
 def encode(path, metadata):
 	log.log('encoding %s' % (path,))
@@ -107,6 +111,7 @@ def encode(path, metadata):
 
 	return output, ugly_output
 
+
 def make_mpd(path, _id, metadata):
 	log.log('generating DASH playlist from %s (%i)' % (path, _id))
 	output = '%s/%s.mpd' % (config.tmpdir, _id)
@@ -119,6 +124,7 @@ def make_mpd(path, _id, metadata):
 	ffmpeg(output)
 	return output
 
+
 def make_hls(path, _id, metadata):
 	log.log('generating HLS playlist from %s (%i)' % (path, _id))
 	output = '%s/%s.m3u8' % (config.tmpdir, _id)
@@ -128,6 +134,7 @@ def make_hls(path, _id, metadata):
 	ffmpeg = ffmpeg.bake('-bsf:v', 'h264_mp4toannexb', '-c:v', 'copy', '-c:a', 'copy', '-c:s', 'dvb_subtitle', '-segment_list_type', 'hls', '-segment_list', output, '-segment_time', '10', '-f', 'segment')
 	ffmpeg('%s/hls-%s-chunk-%s-%%3d.ts' % (config.tmpdir, _id, uuid.uuid4()))
 	return output
+
 
 def extract_subs(path, _id, metadata):
 	log.log('extracting subtitles from %s using %s' % (path, metadata))
@@ -140,6 +147,7 @@ def extract_subs(path, _id, metadata):
 		result.append({'file': output, 'lang': channel['lang'], 'i': i})
 		i = program('-y', '-i', path, '-map', '0:%s' % (i,), output)
 	return result
+
 
 def makePlaylists(files, _id, metadata):
 	log.log('generating playlists from %s' % (files,))

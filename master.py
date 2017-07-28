@@ -1,8 +1,6 @@
-import json
 import operator
 import os
 import re
-import sys
 import time
 import xml.etree.cElementTree as ET
 
@@ -13,6 +11,7 @@ import ffmpeg
 import ffprobe
 import log
 import utils
+
 
 def split(_id, path, metadata, video):
 	up = ceph.ceph()
@@ -40,10 +39,11 @@ def split(_id, path, metadata, video):
 
 	return True
 
+
 # job must be chunkid-ordered
 # TODO: cleanup
 def merge(jobs):
-	#shitty code: changed are inplace, this is not really handled..
+	# shitty code: changed are inplace, this is not really handled..
 	def fix_audio_xml(root, adaptationSet):
 		root.remove(adaptationSet)
 		for representation in adaptationSet:
@@ -137,7 +137,6 @@ def merge(jobs):
 			meta[numb] = job['metadata'][i]
 			numb += 1
 	for i, _ in sorted(meta.items(), key=operator.itemgetter(0)):
-		channel = meta[i]
 		tmp = '%s-stream%s.m4s' % (job['video'], i)
 		up.upload('%s/%s' % (config.tmpdir, tmp), tmp, public=False)
 	up.upload(mpd, '%s.mpd' % (job['video'],), public=False)
@@ -145,6 +144,7 @@ def merge(jobs):
 
 	duration = ffprobe.get_duration(bigfile)
 	return duration
+
 
 def do_job():
 	utils.setup_tmpdir(config.tmpdir)
@@ -183,10 +183,10 @@ def do_job():
 
 	time.sleep(1)
 
+
 def run():
 	while True:
 		try:
 			do_job()
 		except Exception as e:
 			log.log('Error found: %s' % (e,))
-

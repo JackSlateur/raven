@@ -1,9 +1,9 @@
 import json
-import socket
 import pymysql
 
 import utils
 import log
+
 
 class sql:
 	def __init__(self, host, user, pwd, base):
