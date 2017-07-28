@@ -24,6 +24,7 @@ def connect():
 	chan.queue_declare(queue='watcher', durable=True, arguments=args)
 	return chan
 
+
 class DirectRT:
 	def __init__(self, adapter):
 		self.result = None
@@ -42,6 +43,7 @@ class DirectRT:
 
 	def pub(self, body, props):
 		self.adapter.channel.basic_publish('', body=body, routing_key=props.reply_to)
+
 
 class Adapter:
 	def __init__(self, queue):
@@ -110,7 +112,10 @@ class Adapter:
 			'status': status,
 			'hostname': socket.gethostname(),
 			}
-		self.pub(body)
+		for i in range(1..3):
+			if self.pub(body) is True:
+				return
+		raise Exception('notify failed 3 times')
 
 	def direct_reply_to(self, body):
 		return DirectRT(self).direct_reply_to(body)
@@ -118,6 +123,7 @@ class Adapter:
 	def pub_reply(self, body, props):
 		body = json.dumps(body)
 		return DirectRT(self).pub(body, props)
+
 
 def init():
 	global master, worker, watcher
