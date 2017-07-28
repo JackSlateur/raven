@@ -113,7 +113,10 @@ class Adapter:
 			'status': status,
 			'hostname': socket.gethostname(),
 			}
-		self.pub(body)
+		for i in range(1, 3):
+			if self.pub(body) is True:
+				return
+		raise Exception('notify failed 3 times')
 
 	def direct_reply_to(self, body):
 		return DirectRT(self).direct_reply_to(body)
