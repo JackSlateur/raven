@@ -112,7 +112,7 @@ class Adapter:
 			'status': status,
 			'hostname': socket.gethostname(),
 			}
-		for i in range(1..3):
+		for i in range(1, 3):
 			if self.pub(body) is True:
 				return
 		raise Exception('notify failed 3 times')
