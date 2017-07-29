@@ -3,6 +3,7 @@ import os
 import re
 import time
 import xml.etree.cElementTree as ET
+from collections import namedtuple
 
 import amqp
 import ceph
@@ -13,10 +14,13 @@ import log
 import utils
 
 
-def split(_id, path, metadata, video):
+Call = namedtuple('Call', ['begin', 'end', 'function', 'failure', 'result'])
+
+
+def split(_id, body):
 	up = ceph.ceph()
 
-	splitlist = ffmpeg.split(path, video, metadata)
+	splitlist = ffmpeg.split(body['path'], body['video'], body['metadata'])
 	if len(splitlist) == 0:
 		return False
 
@@ -42,7 +46,8 @@ def split(_id, path, metadata, video):
 
 # job must be chunkid-ordered
 # TODO: cleanup
-def merge(jobs):
+def merge(_, body):
+	jobs = body['job']
 	# shitty code: changed are inplace, this is not really handled..
 	def fix_audio_xml(root, adaptationSet):
 		root.remove(adaptationSet)
@@ -146,42 +151,50 @@ def merge(jobs):
 	return duration
 
 
+def probe(_, body):
+	return ffprobe.ffprobe(body['path'])
+
+
 def do_job():
 	utils.setup_tmpdir(config.tmpdir)
 
+	calls = {
+		'TO_SPLIT': Call('SPLITING', 'SPLITED', split, False, 'None'),
+		'TO_PROBE': Call('PROBING', 'PROBED', probe, None, 'metadata'),
+		'TO_MERGE': Call('MERGING', 'MERGED', merge, None, 'duration'),
+	}
+
 	method, props, body = amqp.master.get()
-	if method is not None and body is not None:
-		status = body['status']
-		_id = body['id']
+	if method is None or body is None:
+		time.sleep(1)
+		return
 
-		if status == 'TO_SPLIT':
-			amqp.watcher.notify(_id, 'SPLITING')
-			success = split(_id, body['path'], body['metadata'], body['video'])
-			data = {'id': _id, 'status': 'SPLITED'}
-			amqp.watcher.pub(data, success is False)
-			try:
-				os.remove(body['path'])
-			except FileNotFoundError:
-				pass
+	status = body['status']
+	_id = body['id']
 
-		elif status == 'TO_PROBE':
-			amqp.watcher.notify(_id, 'PROBING')
-			metadata = ffprobe.ffprobe(body['path'])
-			data = {'id': _id, 'metadata': metadata, 'status': 'PROBED'}
-			amqp.watcher.pub(data, metadata is None)
-
-		elif status == 'TO_MERGE':
-			amqp.watcher.notify(_id, 'MERGING')
-			duration = merge(body['job'])
-			data = {'id': _id, 'status': 'MERGED', 'duration': duration}
-			amqp.watcher.pub(data, duration is None)
-
-		else:
-			log.error('Bug found: unknown message received: %s' % (body,))
+	if status not in calls:
+		log.error('Bug found: unknown message received: %s' % (body,))
 		amqp.master.ack(method.delivery_tag)
 		return
 
-	time.sleep(1)
+	call = calls[status]
+	output = {'id': _id, 'status': call.end}
+
+	amqp.watcher.notify(_id, call.begin)
+
+	result = call.function(_id, body)
+	output[call.result] = result
+	if result is call.failure:
+		output['status'] = 'FAILED'
+
+	amqp.watcher.pub(output)
+	amqp.master.ack(method.delivery_tag)
+
+	if status == 'TO_SPLIT':
+		try:
+			os.remove(body['path'])
+		except FileNotFoundError:
+			pass
 
 
 def run():
