@@ -115,6 +115,9 @@ def __update_db(body, masterid=False):
 	if 'hostname' in body:
 		hostname = body['hostname']
 		db.update(body['id'], body['status'], hostname=hostname, masterid=masterid)
+	elif 'metadata' in body:
+		metadata = body['metadata']
+		db.update(body['id'], body['status'], metadata=metadata, masterid=masterid)
 	else:
 		db.update(body['id'], body['status'], masterid=masterid)
 
