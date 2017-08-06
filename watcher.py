@@ -2,12 +2,15 @@ import json
 import pymysql
 import requests
 import time
+from collections import namedtuple
 
 import log
 import config
 import amqp
 
 from sql import sql
+
+Call = namedtuple('Call', ['update', 'function'])
 
 
 def call_upstream(result, duration, _id, metadata=None, thumbnails=None):
@@ -44,11 +47,9 @@ def scan_new():
 			db.update(job['id'], 'SEEN')
 
 
-def __encoded(body, status):
-	db.update(body['id'], status)
+def __encoded(body):
 	item = db.get(body['id'])
 	if item is None:
-		log.log('Database entries vanished, id: %s' % (body['id'],))
 		return
 
 	master = item['master']
@@ -67,9 +68,7 @@ def __encoded(body, status):
 		amqp.worker.pub(data)
 
 
-def __merged_ugly(body, status):
-	db.update(body['id'], status, masterid=True)
-
+def __merged_ugly(body):
 	slaves = db.get_slaves(body['id'])
 	if len(slaves) == 0:
 		log.log('No slaves found, job %s is probably canceled' % (body['id'],))
@@ -84,85 +83,95 @@ def __merged_ugly(body, status):
 	amqp.worker.pub(data)
 
 
-def __thumbed(body, status):
-	db.update(body['id'], status, masterid=True)
+def __thumbed(body):
 	db.set_thumbs(body['id'], body['thumbnails'])
 
 	job = db.get_slaves(body['id'])
 	amqp.master.pub({'status': 'TO_MERGE', 'id': body['id'], 'job': job})
 
 
-def __probed(body, status):
-	db.update(body['id'], status, metadata=body['metadata'], masterid=True)
+def __probed(body):
 	job = db.get(body['id'])
-	if job is None:
-		log.log('Database entries vanished, id: %s' % (body['id'],))
-		return
-
-
-	data = {'status': 'TO_SPLIT', 'id': body['id'], 'path': job['path'], 'metadata': body['metadata'], 'video': job['video']}
-	amqp.master.pub(data, priority=True)
+	if job is not None:
+		data = {'status': 'TO_SPLIT', 'id': body['id'], 'path': job['path'], 'metadata': body['metadata'], 'video': job['video']}
+		amqp.master.pub(data, priority=True)
 
 
 def __merged(body):
 	job = db.get(body['id'])
-	if job is None:
-		log.log('Database entries vanished, id: %s' % (body['id'],))
-		return
-
-	call_upstream(True, body['duration'], job['video'], job['metadata'], job['thumbs'])
+	if job is not None:
+		call_upstream(True, body['duration'], job['video'], job['metadata'], job['thumbs'])
 
 
 def __insert_chunk(body):
 	item = db.get(body['id'])
+	if item is not None:
+		path = json.dumps(body['path'])
+		inserted_id = db.insert(path, 'SPLITED', item['metadata'], body['id'], body['chunkid'], item['video'])
+		amqp.worker.pub({'status': 'TO_ENCODE', 'metadata': item['metadata'], 'path': path, 'id': inserted_id})
+
+
+def __update_db(body, masterid=False):
+	if 'hostname' in body:
+		hostname = body['hostname']
+		db.update(body['id'], body['status'], hostname=hostname, masterid=masterid)
+	elif 'metadata' in body:
+		metadata = body['metadata']
+		db.update(body['id'], body['status'], metadata=metadata, masterid=masterid)
+	else:
+		db.update(body['id'], body['status'], masterid=masterid)
+
+
+def __failed(body):
+	item = db.get(body['id'])
+	if item is not None:
+		video = item['video']
+		call_upstream(False, None, video)
+
+
+def __is_valid(body):
+	item = db.get(body['id'])
 	if item is None:
-		log.log('Database entries vanished, id: %s' % (body['id'],))
-		return
-	path = json.dumps(body['path'])
-	inserted_id = db.insert(path, 'SPLITED', item['metadata'], body['id'], body['chunkid'], item['video'])
-	amqp.worker.pub({'status': 'TO_ENCODE', 'metadata': item['metadata'], 'path': path, 'id': inserted_id})
+		amqp.watcher.pub_reply({'status': False}, body['props'])
+	else:
+		amqp.watcher.pub_reply({'status': True}, body['props'])
 
 
 def scan_events():
+	calls = {
+		'SPLITED': Call('single', None),
+		'ENCODING': Call('single', None),
+		'PROBING': Call('master', None),
+		'SPLITING': Call('master', None),
+		'MERGING': Call('master', None),
+		'MERGING-UGLY': Call('master', None),
+		'THUMBING': Call('master', None),
+		'ENCODED': Call('single', __encoded),
+		'MERGED-UGLY': Call('master', __merged_ugly),
+		'THUMBED': Call('master', __thumbed),
+		'PROBED': Call('master', __probed),
+		'MERGED': Call(None, __merged),
+		'SPLITED_CHUNK': Call(None, __insert_chunk),
+		'FAILED': Call(None, __failed),
+		'IS_VALID': Call(None, __is_valid),
+	}
+
 	while True:
 		method, props, body = amqp.watcher.get()
 		if method is None or body is None:
 			return
-		status = body['status']
+		body['props'] = props
 
-		if status == 'ENCODING':
-			db.update(body['id'], status, hostname=body['hostname'])
-		elif status in ('PROBING', 'SPLITING', 'MERGING', 'MERGING-UGLY', 'THUMBING'):
-			db.update(body['id'], status, hostname=body['hostname'], masterid=True)
-		elif status == 'SPLITED':
-			db.update(body['id'], status)
-		elif status == 'ENCODED':
-			__encoded(body, status)
-		elif status == 'MERGED-UGLY':
-			__merged_ugly(body, status)
-		elif status == 'THUMBED':
-			__thumbed(body, status)
-		elif status == 'PROBED':
-			__probed(body, status)
-		elif status == 'MERGED':
-			__merged(body)
-		elif status == 'SPLITED_CHUNK':
-			__insert_chunk(body)
-		elif status == 'FAILED':
-			item = db.get(body['id'])
-			if item is None:
-				log.log('Database entries vanished, id: %s' % (body['id'],))
-			else:
-				video = item['video']
-				call_upstream(False, None, video)
-		elif status == 'IS_VALID':
-			item = db.get(body['id'])
-			if item is None:
-				amqp.watcher.pub_reply({'status': False}, props)
-			else:
-				amqp.watcher.pub_reply({'status': True}, props)
-		else:
+		if body['status'] not in calls:
 			log.error('Bug found: unknown message received: %s' % (body,))
+		else:
+			call = calls[body['status']]
+			if call.update == 'single':
+				__update_db(body)
+			elif call.update == 'master':
+				__update_db(body, masterid=True)
+			if call.function is not None:
+				call.function(body)
 		amqp.watcher.ack(method.delivery_tag)
 
 
@@ -174,5 +183,5 @@ def run():
 			scan_new()
 			scan_events()
 			time.sleep(1)
-		except (pymysql.err.OperationalError, pymysql.err.InternalError, pymysql.err.ProgrammingError) as e:
+		except Exception as e:
 			log.log(e)

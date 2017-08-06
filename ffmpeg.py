@@ -9,6 +9,7 @@ from sh import ffmpeg as program
 
 program = program.bake("-loglevel", "warning")
 
+
 def split(filename, _id, metadata):
 	log.log('spliting %s' % (filename))
 
@@ -40,6 +41,7 @@ def split(filename, _id, metadata):
 
 	return []
 
+
 def merge(files):
 	log.log('merging files: %s' % (files,))
 
@@ -54,6 +56,7 @@ def merge(files):
 	except Exception as e:
 		log.log('merge error on %s: %s' % (files, e.stderr))
 		return None
+
 
 def thumb(files):
 	log.log('creating thumbs: %s' % (files,))
@@ -75,10 +78,10 @@ def thumb(files):
 				png.append(os.path.join(root, name))
 	return png
 
+
 def encode(path, metadata):
 	log.log('encoding %s' % (path,))
 	output = '%s/encoded.mp4' % (config.tmpdir,)
-	ugly_output = '%s/ugly.mp4' % (config.tmpdir,)
 
 	ffmpeg = program.bake('-nostats', '-i', path)
 
@@ -91,21 +94,26 @@ def encode(path, metadata):
 	ffmpeg = ffmpeg.bake('-c:s', 'mov_text')
 	ffmpeg = ffmpeg.bake(output)
 
-	#Ugly quality encode
-	for stream, _ in sorted(metadata.items(), key=operator.itemgetter(0)):
-		ffmpeg = ffmpeg.bake('-map', '0:%s' % (stream,))
-	ffmpeg = ffmpeg.bake('-c:a', 'aac', '-q:a', '2')
-	ffmpeg = ffmpeg.bake('-c:v', 'libx264', '-crf', '27')
-	ffmpeg = ffmpeg.bake('-c:s', 'mov_text')
-	ffmpeg = ffmpeg.bake('-movflags', 'faststart')
+	if 'ugly' in config.outputs:
+		ugly_output = '%s/ugly.mp4' % (config.tmpdir,)
+		for stream, _ in sorted(metadata.items(), key=operator.itemgetter(0)):
+			ffmpeg = ffmpeg.bake('-map', '0:%s' % (stream,))
+		ffmpeg = ffmpeg.bake('-c:a', 'aac', '-q:a', '2')
+		ffmpeg = ffmpeg.bake('-c:v', 'libx264', '-crf', '27')
+		ffmpeg = ffmpeg.bake('-c:s', 'mov_text')
+		ffmpeg = ffmpeg.bake('-movflags', 'faststart')
+		ffmpeg = ffmpeg.bake(ugly_output)
+	else:
+		ugly_output = None
 
 	try:
-		ffmpeg(ugly_output)
+		ffmpeg()
 	except Exception as e:
 		log.warn('Error on file %s: %s' % (path, e.stderr))
 		return None, None
 
 	return output, ugly_output
+
 
 def make_mpd(path, _id, metadata):
 	log.log('generating DASH playlist from %s (%i)' % (path, _id))
@@ -119,6 +127,7 @@ def make_mpd(path, _id, metadata):
 	ffmpeg(output)
 	return output
 
+
 def make_hls(path, _id, metadata):
 	log.log('generating HLS playlist from %s (%i)' % (path, _id))
 	output = '%s/%s.m3u8' % (config.tmpdir, _id)
@@ -128,6 +137,7 @@ def make_hls(path, _id, metadata):
 	ffmpeg = ffmpeg.bake('-bsf:v', 'h264_mp4toannexb', '-c:v', 'copy', '-c:a', 'copy', '-c:s', 'dvb_subtitle', '-segment_list_type', 'hls', '-segment_list', output, '-segment_time', '10', '-f', 'segment')
 	ffmpeg('%s/hls-%s-chunk-%s-%%3d.ts' % (config.tmpdir, _id, uuid.uuid4()))
 	return output
+
 
 def extract_subs(path, _id, metadata):
 	log.log('extracting subtitles from %s using %s' % (path, metadata))
@@ -141,13 +151,20 @@ def extract_subs(path, _id, metadata):
 		i = program('-y', '-i', path, '-map', '0:%s' % (i,), output)
 	return result
 
+
 def makePlaylists(files, _id, metadata):
 	log.log('generating playlists from %s' % (files,))
 
 	outfile = merge(files)
+	m3u8 = None
+	mpd = None
+	vtts = None
 
-	m3u8 = make_hls(outfile, _id, metadata)
-	mpd = make_mpd(outfile, _id, metadata)
-	vtts = extract_subs(outfile, _id, metadata)
+	if 'hls' in config.outputs:
+		m3u8 = make_hls(outfile, _id, metadata)
+
+	if 'dash' in config.outputs:
+		mpd = make_mpd(outfile, _id, metadata)
+		vtts = extract_subs(outfile, _id, metadata)
 
 	return outfile, m3u8, mpd, vtts

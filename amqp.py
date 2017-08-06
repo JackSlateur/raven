@@ -10,7 +10,8 @@ import log
 
 def connect():
 	credentials = pika.PlainCredentials(config.ramq_user, config.ramq_passwd)
-	params = pika.ConnectionParameters(host=config.ramq_host, credentials=credentials, heartbeat_interval=0)
+	params = pika.ConnectionParameters(host=config.ramq_host,
+					credentials=credentials, heartbeat_interval=0)
 
 	connection = pika.BlockingConnection(params)
 
@@ -31,7 +32,8 @@ class DirectRT:
 		self.adapter = adapter
 
 	def direct_reply_to(self, body):
-		self.adapter.channel.basic_consume(self.callback, queue='amq.rabbitmq.reply-to', no_ack=True)
+		self.adapter.channel.basic_consume(self.callback,
+					queue='amq.rabbitmq.reply-to', no_ack=True)
 		self.adapter.pub(body, reply=True)
 		self.adapter.channel.start_consuming()
 		return self.result
@@ -48,64 +50,65 @@ class DirectRT:
 class Adapter:
 	def __init__(self, queue):
 		self.queue = queue
-		try:
-			self.channel = connect()
-		except pika.exceptions.ConnectionClosed:
-			self.channel = None
+		self.__reconnect()
 
 	def __reconnect(self):
-		if self.channel is None:
-			self.channel = connect()
+		self.channel = connect()
 
-	def get(self):
-		try:
-			self.__reconnect()
-			method, props, body = self.channel.basic_get(self.queue)
-		except pika.exceptions.ConnectionClosed:
-			self.channel = None
-			return None, None, None
-
+	def __get(self):
+		method, props, body = self.channel.basic_get(self.queue)
 		if body is not None:
 			body = json.loads(body.decode('utf-8'))
 		return method, props, body
+
+	def __pub(self, body, props):
+		try:
+			self.channel.basic_publish('', self.queue, body, props)
+		except pika.exceptions.ConnectionClosed:
+			self.__reconnect()
+			self.channel.basic_publish('', self.queue, body, props)
+
+	def __consume_forever(self, callback):
+		self.channel.basic_qos(prefetch_count=1)
+		self.channel.basic_consume(callback, queue=self.queue)
+		self.channel.start_consuming()
+
+	def get(self):
+		try:
+			return self.__get()
+		except pika.exceptions.ConnectionClosed:
+			self.__reconnect()
+			return self.__get()
 
 	def pub(self, body, failed=False, reply=False, priority=False):
 		if failed is True:
 			body['status'] = 'FAILED'
 		body = json.dumps(body)
-		try:
-			self.__reconnect()
 
-			if reply is True:
-				props = pika.BasicProperties(reply_to='amq.rabbitmq.reply-to')
-			else:
-				props = pika.BasicProperties(delivery_mode=2)
-			if priority is True:
-				props.priority = 2
-			self.channel.basic_publish('', self.queue, body, props)
-		except (pika.exceptions.ConnectionClosed, AttributeError):
-			self.channel = None
-			return False
+		if reply is True:
+			props = pika.BasicProperties(reply_to='amq.rabbitmq.reply-to')
+		else:
+			props = pika.BasicProperties(delivery_mode=2)
+		if priority is True:
+			props.priority = 2
+
+		self.__pub(body, props)
 
 	def ack(self, tag):
 		try:
-			self.__reconnect()
 			self.channel.basic_ack(delivery_tag=tag)
 		except pika.exceptions.ConnectionClosed:
-			self.channel = None
-			return False
+			self.__reconnect()
+			self.channel.basic_ack(delivery_tag=tag)
 
 	def consume_forever(self, callback):
 		while True:
 			try:
 				self.__reconnect()
-				self.channel.basic_qos(prefetch_count=1)
-				self.channel.basic_consume(callback, queue=self.queue)
-				self.channel.start_consuming()
-			except (pika.exceptions.ConnectionClosed, AttributeError) as e:
-				self.channel = None
+				self.__consume_forever(callback)
+			except pika.exceptions.ConnectionClosed as e:
 				log.log('consume_forever: %s' % (e,))
-			time.sleep(1)
+				time.sleep(1)
 
 	def notify(self, _id, status):
 		body = {'id': _id,
@@ -127,3 +130,11 @@ def init():
 	master = Adapter('master')
 	worker = Adapter('worker')
 	watcher = Adapter('watcher')
+
+
+def ack(function):
+	def wrapper(*args, **kw):
+		queue, tag = function(*args, **kw)
+		if queue is not None and tag is not None:
+			queue.ack(tag)
+	return wrapper

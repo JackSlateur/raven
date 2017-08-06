@@ -6,10 +6,10 @@ from multiprocessing import Pool
 import collections
 import log
 
-import time
 import boto
 import boto.s3.connection
 import config
+
 
 class ceph:
 	def __init__(self, filename=None, keyname=None, public=True):
@@ -144,6 +144,7 @@ class ceph:
 			self.end_upload(keyname)
 		self.pool.join()
 
+
 def upload_part(x):
 	log.log('upload part:', x)
 	with open(x['path'], 'rb') as f:
@@ -154,6 +155,7 @@ def upload_part(x):
 		x['mp'].upload_part_from_file(output, part_num=x['i'] + 1)
 		output.close()
 	return x['mp']
+
 
 def upload_file(x):
 	log.log('upload file: %s' % (x,))

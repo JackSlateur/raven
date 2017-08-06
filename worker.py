@@ -8,10 +8,12 @@ import log
 import ffmpeg
 import utils
 
+
 def job_exists(_id):
 	data = {'id': _id, 'status': 'IS_VALID'}
 	result = amqp.watcher.direct_reply_to(data)
 	return result['status']
+
 
 def __encode(path, metadata):
 	encoded, ugly = ffmpeg.encode(path, metadata)
@@ -23,15 +25,17 @@ def __encode(path, metadata):
 	keyname = '%s-encoded' % (path.split('/')[-1:][0],)
 	up.upload(encoded, keyname)
 
-	keyname = '%s-ugly' % (keyname,)
-	up.upload(ugly, keyname)
+	if 'ugly' in config.outputs:
+		keyname = '%s-ugly' % (keyname,)
+		up.upload(ugly, keyname)
+
 	up.sync()
 	return True
 
-def encode(body, tag):
+
+def encode(body):
 	if job_exists(body['id']) is False:
 		log.log('encode: ID %s is None, job dropped' % (body['id'],))
-		amqp.worker.ack(tag)
 		return
 
 	amqp.watcher.notify(body['id'], 'ENCODING')
@@ -40,7 +44,7 @@ def encode(body, tag):
 
 	data = {'id': body['id'], 'status': 'ENCODED'}
 	amqp.watcher.pub(data, result is False)
-	amqp.worker.ack(tag)
+
 
 def __merge_ugly(path, video):
 	files = []
@@ -54,23 +58,30 @@ def __merge_ugly(path, video):
 	ceph.ceph(ugly, '%s.mp4' % (video,), public=False)
 	return True
 
-def merge_ugly(body, tag):
-	if job_exists(body['id']) is False:
-		log.log('merge_ugly: ID %s is None, job dropped' % (body['id'],))
-		amqp.worker.ack(tag)
-		return
-	amqp.watcher.notify(body['id'], 'MERGING-UGLY')
 
-	result = __merge_ugly(body['path'], body['video'])
+def merge_ugly(body):
+	if 'ugly' in config.outputs:
+		if job_exists(body['id']) is False:
+			log.log('merge_ugly: ID %s is None, job dropped' % (body['id'],))
+			return
+
+		amqp.watcher.notify(body['id'], 'MERGING-UGLY')
+
+		result = __merge_ugly(body['path'], body['video'])
+	else:
+		result = True
 
 	data = {'id': body['id'], 'status': 'MERGED-UGLY'}
 	amqp.watcher.pub(data, result is False)
-	amqp.worker.ack(tag)
+
 
 def __thumb(path, video):
 	files = []
 	for i in path:
-		files.append('%s-encoded-ugly' % (i,))
+		if 'ugly' in config.outputs:
+			files.append('%s-encoded-ugly' % (i,))
+		else:
+			files.append('%s-encoded' % (i,))
 
 	png = ffmpeg.thumb(files)
 	if png is None:
@@ -89,18 +100,24 @@ def __thumb(path, video):
 
 	return thumbnails
 
-def thumb(body, tag):
-	if job_exists(body['id']) is False:
-		log.log('thumb: ID %s is None, job dropped' % (body['id'],))
-		amqp.worker.ack(tag)
-		return
-	amqp.watcher.notify(body['id'], 'THUMBING')
 
-	thumbs = __thumb(body['path'], body['video'])
-	data = {'id': body['id'], 'thumbnails': thumbs, 'status': 'THUMBED'}
+def thumb(body):
+	Id = body['id']
+	if 'thumbs' not in config.outputs:
+		thumbs = {}
+	else:
+		if job_exists(Id) is False:
+			log.log('thumb: ID %s is None, job dropped' % (Id,))
+			return
+
+		amqp.watcher.notify(Id, 'THUMBING')
+		thumbs = __thumb(body['path'], body['video'])
+
+	data = {'id': Id, 'status': 'THUMBED', 'thumbnails': thumbs}
 	amqp.watcher.pub(data, thumbs is None)
-	amqp.worker.ack(tag)
 
+
+@amqp.ack
 def do_job(ch, method, props, body):
 	utils.setup_tmpdir(config.tmpdir)
 
@@ -114,13 +131,16 @@ def do_job(ch, method, props, body):
 		body['path'] = path
 
 	if body['status'] == 'TO_ENCODE':
-		encode(body, method.delivery_tag)
+		encode(body)
 
 	if body['status'] == 'TO_MERGE_UGLY':
-		merge_ugly(body, method.delivery_tag)
+		merge_ugly(body)
 
 	if body['status'] == 'TO_THUMB':
-		thumb(body, method.delivery_tag)
+		thumb(body)
+
+	return amqp.worker, method.delivery_tag
+
 
 def run():
 	amqp.worker.consume_forever(do_job)

@@ -1,9 +1,9 @@
 import json
-import socket
 import pymysql
 
 import utils
 import log
+
 
 class sql:
 	def __init__(self, host, user, pwd, base):
@@ -66,7 +66,11 @@ class sql:
 		self.__exec(query, (_id,))
 		item = self.__fetchone()
 
-		return self.__expand(item)
+		item = self.__expand(item)
+		if item is None:
+			log.log('Database entry vanished, is: %s' % (_id))
+
+		return item
 
 	def get_new(self):
 		query = 'select * from files where status = %s'
