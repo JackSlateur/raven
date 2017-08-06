@@ -44,52 +44,27 @@ def split(_id, body):
 	return True
 
 
-# job must be chunkid-ordered
-# TODO: cleanup
-def merge(_, body):
-	jobs = body['job']
-	# shitty code: changed are inplace, this is not really handled..
-	def fix_audio_xml(root, adaptationSet):
-		root.remove(adaptationSet)
-		for representation in adaptationSet:
-			for baseurl in representation.iter('BaseURL'):
-				match = re.match('[0-9]+-stream([0-9]+).m4s', baseurl.text)
-				if not match:
-					continue
-				streamid = match.group(1)
-				AS = ET.SubElement(root, 'AdaptationSet')
-				AS.set('segmentAlignment', 'true')
-				try:
-					lang = job['metadata'][streamid]['lang']
-					AS.set('lang', lang)
-					representation.set('lang', lang)
-				except KeyError:
-					pass
-				AS.append(representation)
+# shitty code: changed are inplace, this is not really handled..
+def fix_audio_xml(root, adaptationSet, metadata):
+	root.remove(adaptationSet)
+	for representation in adaptationSet:
+		for baseurl in representation.iter('BaseURL'):
+			match = re.match('[0-9]+-stream([0-9]+).m4s', baseurl.text)
+			if not match:
+				continue
+			streamid = match.group(1)
+			AS = ET.SubElement(root, 'AdaptationSet')
+			AS.set('segmentAlignment', 'true')
+			try:
+				lang = metadata[streamid]['lang']
+				AS.set('lang', lang)
+				representation.set('lang', lang)
+			except KeyError:
+				pass
+			AS.append(representation)
 
-	files = []
-	if len(jobs) == 0:
-		return None
-	for i in jobs:
-		files.append('%s-encoded' % (i['path'],))
 
-	job = jobs[0]
-
-	try:
-		bigfile, m3u8, mpd, vtts = ffmpeg.makePlaylists(files, job['video'], job['metadata'])
-	except Exception as e:
-		log.log('merge error on master %s : %s' % (job['master'], e.stderr))
-		return None
-
-	up = ceph.ceph()
-	up.upload(m3u8, '%s.m3u8' % (job['video'],), public=False)
-
-	match = re.compile('.*\.ts$')
-	for root, dirs, files in os.walk(config.tmpdir):
-		for name in files:
-			if re.match(match, name):
-				up.upload(os.path.join(root, name), name)
-
+def fix_dash(mpd, vtts, video, metadata):
 	tree = ET.parse(mpd)
 	root = tree.getroot()
 	ns = '{urn:mpeg:dash:schema:mpd:2011}'
@@ -106,7 +81,7 @@ def merge(_, body):
 		attr = adaptationSet.attrib
 		if 'contentType' not in attr or attr['contentType'] != 'audio':
 			continue
-		fix_audio_xml(root, adaptationSet)
+		fix_audio_xml(root, adaptationSet, metadata)
 
 	as_list = {}
 	index = 0
@@ -127,24 +102,63 @@ def merge(_, body):
 		repre.set('bandwidth', '256')
 		repre.set('lang', lang)
 		baseurl = ET.SubElement(repre, 'BaseURL')
-		baseurl.text = '%s-%s-%s.vtt' % (job['video'], i['lang'], i['i'])
+		baseurl.text = '%s-%s-%s.vtt' % (video, i['lang'], i['i'])
 
 	tree.write(mpd)
 
-	log.log('uploading playlist, subs and m4s')
+
+def upload_hls(upload, m3u8, video):
+	upload.upload(m3u8, '%s.m3u8' % (video,), public=False)
+
+	match = re.compile('.*\.ts$')
+	for root, dirs, files in os.walk(config.tmpdir):
+		for name in files:
+			if re.match(match, name):
+				upload.upload(os.path.join(root, name), name)
+
+
+def upload_dash(upload, mpd, vtts, video, metadata):
 	for i in vtts:
-		up.upload(i['file'], '%s-%s-%s.vtt' % (job['video'], i['lang'], i['i']), public=False)
+		upload.upload(i['file'], '%s-%s-%s.vtt' % (video, i['lang'], i['i']), public=False)
 
 	meta = {}
 	numb = 0
-	for i in job['metadata']:
-		if job['metadata'][i]['type'] != 'subtitle':
-			meta[numb] = job['metadata'][i]
+	for i in metadata:
+		if metadata[i]['type'] != 'subtitle':
+			meta[numb] = metadata[i]
 			numb += 1
 	for i, _ in sorted(meta.items(), key=operator.itemgetter(0)):
-		tmp = '%s-stream%s.m4s' % (job['video'], i)
-		up.upload('%s/%s' % (config.tmpdir, tmp), tmp, public=False)
-	up.upload(mpd, '%s.mpd' % (job['video'],), public=False)
+		tmp = '%s-stream%s.m4s' % (video, i)
+		upload.upload('%s/%s' % (config.tmpdir, tmp), tmp, public=False)
+	upload.upload(mpd, '%s.mpd' % (video,), public=False)
+
+
+# job must be chunkid-ordered
+def merge(_, body):
+	jobs = body['job']
+	files = []
+	if len(jobs) == 0:
+		return None
+	for i in jobs:
+		files.append('%s-encoded' % (i['path'],))
+
+	job = jobs[0]
+
+	try:
+		bigfile, m3u8, mpd, vtts = ffmpeg.makePlaylists(files, job['video'], job['metadata'])
+	except Exception as e:
+		log.log('merge error on master %s : %s' % (job['master'], e.stderr))
+		return None
+
+	up = ceph.ceph()
+
+	if m3u8 is not None:
+		upload_hls(up, m3u8, job['video'])
+
+	if mpd is not None and vtts is not None:
+		fix_dash(mpd, vtts, job['video'], job['metadata'])
+		upload_dash(up, mpd, vtts, job['video'], job['metadata'])
+
 	up.sync()
 
 	duration = ffprobe.get_duration(bigfile)

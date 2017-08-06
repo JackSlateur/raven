@@ -82,7 +82,6 @@ def thumb(files):
 def encode(path, metadata):
 	log.log('encoding %s' % (path,))
 	output = '%s/encoded.mp4' % (config.tmpdir,)
-	ugly_output = '%s/ugly.mp4' % (config.tmpdir,)
 
 	ffmpeg = program.bake('-nostats', '-i', path)
 
@@ -95,16 +94,20 @@ def encode(path, metadata):
 	ffmpeg = ffmpeg.bake('-c:s', 'mov_text')
 	ffmpeg = ffmpeg.bake(output)
 
-	#Ugly quality encode
-	for stream, _ in sorted(metadata.items(), key=operator.itemgetter(0)):
-		ffmpeg = ffmpeg.bake('-map', '0:%s' % (stream,))
-	ffmpeg = ffmpeg.bake('-c:a', 'aac', '-q:a', '2')
-	ffmpeg = ffmpeg.bake('-c:v', 'libx264', '-crf', '27')
-	ffmpeg = ffmpeg.bake('-c:s', 'mov_text')
-	ffmpeg = ffmpeg.bake('-movflags', 'faststart')
+	if 'ugly' in config.outputs:
+		ugly_output = '%s/ugly.mp4' % (config.tmpdir,)
+		for stream, _ in sorted(metadata.items(), key=operator.itemgetter(0)):
+			ffmpeg = ffmpeg.bake('-map', '0:%s' % (stream,))
+		ffmpeg = ffmpeg.bake('-c:a', 'aac', '-q:a', '2')
+		ffmpeg = ffmpeg.bake('-c:v', 'libx264', '-crf', '27')
+		ffmpeg = ffmpeg.bake('-c:s', 'mov_text')
+		ffmpeg = ffmpeg.bake('-movflags', 'faststart')
+		ffmpeg = ffmpeg.bake(ugly_output)
+	else:
+		ugly_output = None
 
 	try:
-		ffmpeg(ugly_output)
+		ffmpeg()
 	except Exception as e:
 		log.warn('Error on file %s: %s' % (path, e.stderr))
 		return None, None
@@ -153,9 +156,15 @@ def makePlaylists(files, _id, metadata):
 	log.log('generating playlists from %s' % (files,))
 
 	outfile = merge(files)
+	m3u8 = None
+	mpd = None
+	vtts = None
 
-	m3u8 = make_hls(outfile, _id, metadata)
-	mpd = make_mpd(outfile, _id, metadata)
-	vtts = extract_subs(outfile, _id, metadata)
+	if 'hls' in config.outputs:
+		m3u8 = make_hls(outfile, _id, metadata)
+
+	if 'dash' in config.outputs:
+		mpd = make_mpd(outfile, _id, metadata)
+		vtts = extract_subs(outfile, _id, metadata)
 
 	return outfile, m3u8, mpd, vtts

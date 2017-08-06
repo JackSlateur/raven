@@ -1,6 +1,6 @@
-### Do not edit me ! You can override all settings in config/raven.py ###
+# Do not edit me ! You can override all settings in config/raven.py
 
-version = "2.0.0"
+version = "2.1.0"
 
 # Should be large enought to store all chunks. Make it larger for the master.
 tmpdir = '/tmp/raven'
@@ -42,3 +42,9 @@ ketchup_host = 'http://ketchup.domain.com'
 # Upstream's URI, for callback. It must contains a %s, that will be replaced by
 # upstream's id
 upstream_uri = 'http://upstream.domain.com/callbackup/%s/'
+
+# List of 'outputs' we will generate for each input
+# If empty, it effectively make the whole process useless
+# Should be consistent across all nodes
+# Some processing will always be done, regardless of this, uselessly
+outputs = ['ugly', 'hls', 'dash', 'thumbs']
