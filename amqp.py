@@ -130,3 +130,11 @@ def init():
 	master = Adapter('master')
 	worker = Adapter('worker')
 	watcher = Adapter('watcher')
+
+
+def ack(function):
+	def wrapper(*args, **kw):
+		queue, tag = function(*args, **kw)
+		if queue is not None and tag is not None:
+			queue.ack(tag)
+	return wrapper

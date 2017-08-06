@@ -31,10 +31,9 @@ def __encode(path, metadata):
 	return True
 
 
-def encode(body, tag):
+def encode(body):
 	if job_exists(body['id']) is False:
 		log.log('encode: ID %s is None, job dropped' % (body['id'],))
-		amqp.worker.ack(tag)
 		return
 
 	amqp.watcher.notify(body['id'], 'ENCODING')
@@ -43,7 +42,6 @@ def encode(body, tag):
 
 	data = {'id': body['id'], 'status': 'ENCODED'}
 	amqp.watcher.pub(data, result is False)
-	amqp.worker.ack(tag)
 
 
 def __merge_ugly(path, video):
@@ -59,18 +57,17 @@ def __merge_ugly(path, video):
 	return True
 
 
-def merge_ugly(body, tag):
+def merge_ugly(body):
 	if job_exists(body['id']) is False:
 		log.log('merge_ugly: ID %s is None, job dropped' % (body['id'],))
-		amqp.worker.ack(tag)
 		return
+
 	amqp.watcher.notify(body['id'], 'MERGING-UGLY')
 
 	result = __merge_ugly(body['path'], body['video'])
 
 	data = {'id': body['id'], 'status': 'MERGED-UGLY'}
 	amqp.watcher.pub(data, result is False)
-	amqp.worker.ack(tag)
 
 
 def __thumb(path, video):
@@ -96,19 +93,19 @@ def __thumb(path, video):
 	return thumbnails
 
 
-def thumb(body, tag):
+def thumb(body):
 	if job_exists(body['id']) is False:
 		log.log('thumb: ID %s is None, job dropped' % (body['id'],))
-		amqp.worker.ack(tag)
 		return
+
 	amqp.watcher.notify(body['id'], 'THUMBING')
 
 	thumbs = __thumb(body['path'], body['video'])
 	data = {'id': body['id'], 'thumbnails': thumbs, 'status': 'THUMBED'}
 	amqp.watcher.pub(data, thumbs is None)
-	amqp.worker.ack(tag)
 
 
+@amqp.ack
 def do_job(ch, method, props, body):
 	utils.setup_tmpdir(config.tmpdir)
 
@@ -122,13 +119,15 @@ def do_job(ch, method, props, body):
 		body['path'] = path
 
 	if body['status'] == 'TO_ENCODE':
-		encode(body, method.delivery_tag)
+		encode(body)
 
 	if body['status'] == 'TO_MERGE_UGLY':
-		merge_ugly(body, method.delivery_tag)
+		merge_ugly(body)
 
 	if body['status'] == 'TO_THUMB':
-		thumb(body, method.delivery_tag)
+		thumb(body)
+
+	return amqp.worker, method.delivery_tag
 
 
 def run():
