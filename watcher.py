@@ -184,5 +184,5 @@ def run():
 			scan_new()
 			scan_events()
 			time.sleep(1)
-		except (pymysql.err.OperationalError, pymysql.err.InternalError, pymysql.err.ProgrammingError) as e:
+		except Exception as e:
 			log.log(e)
