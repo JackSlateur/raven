@@ -10,7 +10,8 @@ import log
 
 def connect():
 	credentials = pika.PlainCredentials(config.ramq_user, config.ramq_passwd)
-	params = pika.ConnectionParameters(host=config.ramq_host, credentials=credentials, heartbeat_interval=0)
+	params = pika.ConnectionParameters(host=config.ramq_host,
+					credentials=credentials, heartbeat_interval=0)
 
 	connection = pika.BlockingConnection(params)
 
@@ -31,7 +32,8 @@ class DirectRT:
 		self.adapter = adapter
 
 	def direct_reply_to(self, body):
-		self.adapter.channel.basic_consume(self.callback, queue='amq.rabbitmq.reply-to', no_ack=True)
+		self.adapter.channel.basic_consume(self.callback,
+					queue='amq.rabbitmq.reply-to', no_ack=True)
 		self.adapter.pub(body, reply=True)
 		self.adapter.channel.start_consuming()
 		return self.result
@@ -57,16 +59,16 @@ class Adapter:
 		method, props, body = self.channel.basic_get(self.queue)
 		if body is not None:
 			body = json.loads(body.decode('utf-8'))
-		return method, propos, body
+		return method, props, body
 
-	def __pub(body, props):
+	def __pub(self, body, props):
 		try:
 			self.channel.basic_publish('', self.queue, body, props)
 		except pika.exceptions.ConnectionClosed:
 			self.__reconnect()
 			self.channel.basic_publish('', self.queue, body, props)
 
-	def __consume_forever(callback):
+	def __consume_forever(self, callback):
 		self.channel.basic_qos(prefetch_count=1)
 		self.channel.basic_consume(callback, queue=self.queue)
 		self.channel.start_consuming()
