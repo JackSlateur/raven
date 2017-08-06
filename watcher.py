@@ -119,10 +119,6 @@ def __update_db(body, masterid=False):
 		db.update(body['id'], body['status'], masterid=masterid)
 
 
-def __update_master(body):
-	__update_db(body, True)
-
-
 def __failed(body):
 	item = db.get(body['id'])
 	if item is not None:
