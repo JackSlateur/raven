@@ -1,8 +1,8 @@
 #!/bin/bash
 . /lib/lsb/init-functions
 
-DAEMON=/root/raven/raven.py
-ROLES=/root/raven/roles.py
+DAEMON=/usr/local/bin/raven/raven.py
+ROLES=/usr/local/bin/raven/roles.py
 USER=raven
 
 test -x $DAEMON || exit 0
