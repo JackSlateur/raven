@@ -1,6 +1,6 @@
 # Do not edit me ! You can override all settings in config/raven.py
 
-version = "2.1.0"
+version = "2.1.1"
 
 # Should be large enought to store all chunks. Make it larger for the master.
 tmpdir = '/tmp/raven'
