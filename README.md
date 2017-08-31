@@ -33,7 +33,6 @@ How to install
 ---
 On all nodes (stretch required, at least):
 ```
-useradd --system raven
 aptitude install python3 python3-requests python3-sh python3-boto ffmpeg python3-pika
 ln -s /root/raven/raven.init /etc/init.d/raven && update-rc.d raven defaults
 ```

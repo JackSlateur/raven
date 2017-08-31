@@ -3,14 +3,15 @@
 
 DAEMON=/usr/local/bin/raven/raven.py
 ROLES=/usr/local/bin/raven/roles.py
-USER=raven
+USER=nobody
+GROUP=nogroup
 
 test -x $DAEMON || exit 0
 
 do_real_start(){
 	DAEMON_ARGS="$1"
 	PIDFILE="/var/run/raven-$1.pid"
-	start-stop-daemon --start --oknodo --background --quiet -c $USER ${PIDFILE:+--pidfile ${PIDFILE} --make-pidfile} $START_ARGS --exec /usr/bin/python3 -- $DAEMON $DAEMON_ARGS > /dev/null || return 2
+	start-stop-daemon --start --oknodo --background --quiet -c $USER:$GROUP ${PIDFILE:+--pidfile ${PIDFILE} --make-pidfile} $START_ARGS --exec /usr/bin/python3 -- $DAEMON $DAEMON_ARGS > /dev/null || return 2
 }
 
 do_real_stop(){
