@@ -139,6 +139,7 @@ def do_job(ch, method, props, body):
 	if body['status'] == 'TO_THUMB':
 		thumb(body)
 
+	utils.setup_tmpdir(config.tmpdir)
 	return amqp.worker, method.delivery_tag
 
 
