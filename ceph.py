@@ -35,7 +35,7 @@ class ceph:
 			aws_access_key_id=config.key,
 			aws_secret_access_key=config.secret,
 			host=config.ceph_fqdn,
-			is_secure=False,
+			is_secure=True,
 			calling_format=boto.s3.connection.OrdinaryCallingFormat(),
 		)
 
